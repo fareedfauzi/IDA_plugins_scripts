@@ -20,12 +20,6 @@ Via hotkey:
 - `Ctrl + Alt + H`: Enable function call highlighting.
 - `Ctrl + Alt + D`: Disable function call highlighting.
 
-### Screenshots
-Before:
+Before and after:
 
-![image](https://github.com/user-attachments/assets/84cd2cf6-bc72-492a-bacd-955a7cba18c6)
-
-After:
-
-![image](https://github.com/user-attachments/assets/fe2dee33-4869-48d8-96b3-0c8622189ce3)
-
+![ida64_a98qM7lfUH](https://github.com/user-attachments/assets/f13c2511-c698-4fed-8fcc-6e4d86f0100a)
