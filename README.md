@@ -16,4 +16,6 @@ After:
 
 ![image](https://github.com/user-attachments/assets/fe2dee33-4869-48d8-96b3-0c8622189ce3)
 
+Issues to fix:
+- Our regex cannot coop Large function which lead to IDA being crashed
 
