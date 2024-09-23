@@ -47,10 +47,9 @@ class GraphLinearHighlightHooks(idaapi.IDB_Hooks):
             idaapi.set_item_color(ea, HIGHLIGHT_COLOR)
 
     def _remove_highlight(self, ea):
-        idaapi.set_item_color(ea, 0xFFFFFFFF)  # Reset to default
-
+        idaapi.set_item_color(ea, 0xFFFFFFFF)
     def refresh_view(self):
-        seg = ida_segment.getseg(idaapi.get_screen_ea())  # Get the current segment
+        seg = ida_segment.getseg(idaapi.get_screen_ea())
         if not seg:
             return
 
@@ -78,29 +77,38 @@ class highlight_func_calls_t(ida_idaapi.plugin_t):
     disable_disasm_action_name = "highlight_disasm_calls:disable"
 
     def init(self):
-        if not ida_hexrays.init_hexrays_plugin():
-            ida_kernwin.msg("Hex-Rays not available.\n")
-            return ida_idaapi.PLUGIN_SKIP
+        # Check if Hex-Rays is available
+        hexrays_available = ida_hexrays.init_hexrays_plugin()
+        
+        if hexrays_available:
+            # Register Enable/Disable actions for right-click menu in pseudocode
+            enable_action = idaapi.action_desc_t(
+                self.enable_action_name,
+                "Enable Highlighting (Pseudocode)",
+                toggle_highlight_on_handler(),
+                "Ctrl+Alt+H",
+                "Enable function call highlighting",
+                201
+            )
+            disable_action = idaapi.action_desc_t(
+                self.disable_action_name,
+                "Disable Highlighting (Pseudocode)",
+                toggle_highlight_off_handler(),
+                "Ctrl+Alt+D",
+                "Disable function call highlighting",
+                201
+            )
+            idaapi.register_action(enable_action)
+            idaapi.register_action(disable_action)
 
-        # Register Enable/Disable actions for right-click menu in pseudocode
-        enable_action = idaapi.action_desc_t(
-            self.enable_action_name,
-            "Enable Highlighting (Pseudocode)",
-            toggle_highlight_on_handler(),
-            "Ctrl+Alt+H",
-            "Enable function call highlighting",
-            201
-        )
-        disable_action = idaapi.action_desc_t(
-            self.disable_action_name,
-            "Disable Highlighting (Pseudocode)",
-            toggle_highlight_off_handler(),
-            "Ctrl+Alt+D",
-            "Disable function call highlighting",
-            201
-        )
+            # Hook the pseudocode highlighting if Hex-Rays is available
+            self.hooks = highlight_hooks_t()
+            self.hooks.hook()
 
-        # Register Enable/Disable actions for right-click menu in disassembly views
+        else:
+            ida_kernwin.msg("Hex-Rays not available. Pseudocode highlighting disabled.\n")
+
+        # Register Enable/Disable actions for right-click menu in disassembly views (Graph/Linear)
         enable_disasm_action = idaapi.action_desc_t(
             self.enable_disasm_action_name,
             "Enable Highlighting (Graph/Linear)",
@@ -118,17 +126,12 @@ class highlight_func_calls_t(ida_idaapi.plugin_t):
             201
         )
 
-        idaapi.register_action(enable_action)
-        idaapi.register_action(disable_action)
         idaapi.register_action(enable_disasm_action)
         idaapi.register_action(disable_disasm_action)
 
-        # Hook the right-click context menu
+        # Hook the right-click context menu for both views
         self.menu_hooks = ContextMenuHooks()
         self.menu_hooks.hook()
-
-        self.hooks = highlight_hooks_t()
-        self.hooks.hook()
 
         # Hook for Graph/Linear view highlighting
         self.graph_linear_hooks = GraphLinearHighlightHooks()
@@ -137,7 +140,7 @@ class highlight_func_calls_t(ida_idaapi.plugin_t):
         return ida_idaapi.PLUGIN_KEEP
 
     def term(self):
-        if self.hooks:
+        if hasattr(self, 'hooks') and self.hooks:
             self.hooks.unhook()
 
         idaapi.unregister_action(self.enable_action_name)
@@ -149,6 +152,7 @@ class highlight_func_calls_t(ida_idaapi.plugin_t):
             self.menu_hooks.unhook()
 
         ida_kernwin.msg("Highlight Function Calls plugin: Unloaded.\n")
+
 
     def run(self, arg):
         pass
