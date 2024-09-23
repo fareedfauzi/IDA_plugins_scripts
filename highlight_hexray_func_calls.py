@@ -5,22 +5,23 @@ import ida_idaapi
 import re
 
 HIGHLIGHT_COLOR = 0x99FFFF
+plugin_enabled = False
 
 class highlight_hooks_t(ida_hexrays.Hexrays_Hooks):
     def __init__(self):
         ida_hexrays.Hexrays_Hooks.__init__(self)
         self.func_call_pattern = re.compile(
-            r"\b[a-zA-Z_]+\d*[a-zA-Z_]*\d*\s*\([^)]*\)\s*(?:;|\)|\s*\{)|"  # Handles multiple underscores in function names
-            r"\b[\w_]+\s*\((?:[^)]|\n)*\)\s*(?:;|\)|\s*\{)|"  # Standard function calls, multiline args
-            r"\(\*\([^)]*\)\)\s*\([^)]*\)|"  # Pointer function calls
-            r"(?<!BYTE)(?<!WORD)\b[\w_]+\s*\(\s*(?:[^=<>]|\n)*\)\s*(?:;|\)|\s*\{)",  # Avoid BYTE and WORD
+            r"\b[a-zA-Z_]+\d*[a-zA-Z_]*\d*\s*\([^)]*\)\s*(?:;|\)|\s*\{)|"
+            r"\b[\w_]+\s*\((?:[^)]|\n)*\)\s*(?:;|\)|\s*\{)|"
+            r"\(\*\([^)]*\)\)\s*\([^)]*\)|"
+            r"\b[\w_]+\s*\(\s*(([^()]*|\n|\s|\*|\[|\])+)\s*\)\s*(?:;|\)|\s*\{)|"
+            r"(?<!BYTE)(?<!WORD)\b[\w_]+\s*\(\s*(?:[^=<>]|\n)*\)\s*(?:;|\)|\s*\{)",
             re.IGNORECASE | re.DOTALL
         )
 
-
-
     def _apply_highlight(self, vu, pc):
-        if pc:
+        # Optimization: Limit to a reasonable number of lines to avoid performance issues
+        if pc and plugin_enabled and len(pc) < 1000:  # Limit processing to 1000 lines for better performance
             for sl in pc:
                 line = sl.line
                 clean_line = il.tag_remove(line).strip()
@@ -29,9 +30,10 @@ class highlight_hooks_t(ida_hexrays.Hexrays_Hooks):
         return
 
     def text_ready(self, vu):
-        pc = vu.cfunc.get_pseudocode()
-        if pc:
-            self._apply_highlight(vu, pc)
+        if plugin_enabled:
+            pc = vu.cfunc.get_pseudocode()
+            if pc:
+                self._apply_highlight(vu, pc)
         return 0
 
 class highlight_func_calls_t(ida_idaapi.plugin_t):
@@ -49,22 +51,32 @@ class highlight_func_calls_t(ida_idaapi.plugin_t):
         self.hooks = highlight_hooks_t()
         self.hooks.hook()
 
-        vu = ida_hexrays.get_widget_vdui(kw.get_current_viewer())
-        if vu is None:
-            kw.msg("No active Hex-Rays decompiler view detected. Please open a decompiler view.\n")
-        else:
-            vu.refresh_ctext()
-
-        kw.msg("Highlight Function Calls plugin: START.\n")
+        kw.msg("Highlight Function Calls plugin: Loaded but inactive.\n")
         return ida_idaapi.PLUGIN_KEEP
 
     def term(self):
         if self.hooks:
             self.hooks.unhook()
-        kw.msg("Highlight Function Calls plugin: DONE\n")
+        kw.msg("Highlight Function Calls plugin: Unloaded.\n")
 
     def run(self, arg):
-        pass
+        toggle_plugin_for_current_view()
+
+def toggle_plugin_for_current_view():
+    global plugin_enabled
+    plugin_enabled = not plugin_enabled
+
+    vu = ida_hexrays.get_widget_vdui(kw.get_current_viewer())
+    if vu is None:
+        kw.msg("No active Hex-Rays decompiler view detected.\n")
+        return
+
+    if plugin_enabled:
+        kw.msg("Highlight Function Calls plugin: ENABLED for the current view.\n")
+        vu.refresh_ctext()  # Refresh the pseudocode to apply highlighting
+    else:
+        kw.msg("Highlight Function Calls plugin: DISABLED.\n")
+        vu.refresh_ctext()  # Refresh the pseudocode to remove highlighting
 
 def PLUGIN_ENTRY():
     return highlight_func_calls_t()
