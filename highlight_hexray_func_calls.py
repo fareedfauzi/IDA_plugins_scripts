@@ -11,17 +11,16 @@ class highlight_hooks_t(ida_hexrays.Hexrays_Hooks):
     def __init__(self):
         ida_hexrays.Hexrays_Hooks.__init__(self)
         self.func_call_pattern = re.compile(
-            r"\b[a-zA-Z_]+\d*[a-zA-Z_]*\d*\s*\([^)]*\)\s*(?:;|\)|\s*\{)|"
-            r"\b[\w_]+\s*\((?:[^)]|\n)*\)\s*(?:;|\)|\s*\{)|"
-            r"\(\*\([^)]*\)\)\s*\([^)]*\)|"
-            r"\b[\w_]+\s*\(\s*(([^()]*|\n|\s|\*|\[|\])+)\s*\)\s*(?:;|\)|\s*\{)|"
-            r"(?<!BYTE)(?<!WORD)\b[\w_]+\s*\(\s*(?:[^=<>]|\n)*\)\s*(?:;|\)|\s*\{)",
-            re.IGNORECASE | re.DOTALL
-        )
+        r"\b[\w_]+\s*\(\s*[^()]*?\s*\)\s*(?:;|\)|\{)|"        # Function calls
+        r"\(\*\([^)]*\)\)\s*\([^)]*\)|"                       # Pointer dereference calls
+        r"(?<!BYTE)(?<!WORD)\b[\w_]+\s*\([^=<>]*?\)\s*(?:;|\)|\{)",  # Skip WORD/BYTE
+        re.IGNORECASE | re.DOTALL
+)
+
 
     def _apply_highlight(self, vu, pc):
         # Optimization: Limit to a reasonable number of lines to avoid performance issues
-        if pc and plugin_enabled and len(pc) < 1000:  # Limit processing to 1000 lines for better performance
+        if pc and plugin_enabled and len(pc) < 2000: 
             for sl in pc:
                 line = sl.line
                 clean_line = il.tag_remove(line).strip()
@@ -39,7 +38,7 @@ class highlight_hooks_t(ida_hexrays.Hexrays_Hooks):
 class highlight_func_calls_t(ida_idaapi.plugin_t):
     flags = ida_idaapi.PLUGIN_UNL
     comment = "Highlight function calls in Hex-Rays pseudocode"
-    help = "Highlights function pointer and strict function calls based on naming conventions"
+    help = "Highlights function pointer and function calls based on naming conventions"
     wanted_name = "Highlight Function Calls"
     wanted_hotkey = "Ctrl-Shift-H"
 
