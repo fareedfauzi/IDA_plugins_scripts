@@ -2,6 +2,8 @@ import idaapi
 import ida_hexrays
 import ida_kernwin
 import ida_lines
+import ida_idaapi
+import ida_segment
 import re
 
 HIGHLIGHT_COLOR = 0x99FFFF
@@ -33,25 +35,57 @@ class highlight_hooks_t(ida_hexrays.Hexrays_Hooks):
                 self._apply_highlight(vu, pc)
         return 0
 
-class highlight_func_calls_t(idaapi.plugin_t):
-    flags = idaapi.PLUGIN_UNL
-    comment = "Highlight function calls in Hex-Rays pseudocode"
+# Hook for highlighting function calls in Graph and Linear views
+class GraphLinearHighlightHooks(idaapi.IDB_Hooks):
+    def __init__(self):
+        idaapi.IDB_Hooks.__init__(self)
+
+    def _highlight_disassembly_calls(self, ea):
+        disasm_line = ida_lines.generate_disasm_line(ea, 0)
+        if "call" in disasm_line:
+            # Highlight the line if it contains a function call
+            idaapi.set_item_color(ea, HIGHLIGHT_COLOR)
+
+    def _remove_highlight(self, ea):
+        idaapi.set_item_color(ea, 0xFFFFFFFF)  # Reset to default
+
+    def refresh_view(self):
+        seg = ida_segment.getseg(idaapi.get_screen_ea())  # Get the current segment
+        if not seg:
+            return
+
+        start = seg.start_ea
+        end = seg.end_ea
+        if plugin_enabled:
+            for ea in range(start, end):
+                if idaapi.is_code(idaapi.get_full_flags(ea)):
+                    self._highlight_disassembly_calls(ea)
+        else:
+            for ea in range(start, end):
+                if idaapi.is_code(idaapi.get_full_flags(ea)):
+                    self._remove_highlight(ea)
+
+class highlight_func_calls_t(ida_idaapi.plugin_t):
+    flags = ida_idaapi.PLUGIN_UNL
+    comment = "Highlight function calls in Hex-Rays pseudocode, Graph View, and Linear View"
     help = "Highlights function pointer and function calls based on naming conventions"
     wanted_name = "Highlight Function Calls"
     wanted_hotkey = ""
 
     enable_action_name = "highlight_func_calls:enable"
     disable_action_name = "highlight_func_calls:disable"
+    enable_disasm_action_name = "highlight_disasm_calls:enable"
+    disable_disasm_action_name = "highlight_disasm_calls:disable"
 
     def init(self):
         if not ida_hexrays.init_hexrays_plugin():
             ida_kernwin.msg("Hex-Rays not available.\n")
-            return idaapi.PLUGIN_SKIP
+            return ida_idaapi.PLUGIN_SKIP
 
-        # Register Enable and Disable actions for right-click menu
+        # Register Enable/Disable actions for right-click menu in pseudocode
         enable_action = idaapi.action_desc_t(
             self.enable_action_name,
-            "Enable Highlighting",
+            "Enable Highlighting (Pseudocode)",
             toggle_highlight_on_handler(),
             "Ctrl+Alt+H",
             "Enable function call highlighting",
@@ -59,15 +93,35 @@ class highlight_func_calls_t(idaapi.plugin_t):
         )
         disable_action = idaapi.action_desc_t(
             self.disable_action_name,
-            "Disable Highlighting",
+            "Disable Highlighting (Pseudocode)",
             toggle_highlight_off_handler(),
             "Ctrl+Alt+D",
             "Disable function call highlighting",
             201
         )
 
+        # Register Enable/Disable actions for right-click menu in disassembly views
+        enable_disasm_action = idaapi.action_desc_t(
+            self.enable_disasm_action_name,
+            "Enable Highlighting (Graph/Linear)",
+            toggle_disasm_highlight_on_handler(),
+            "Ctrl+Alt+G",
+            "Enable function call highlighting in Graph/Linear view",
+            201
+        )
+        disable_disasm_action = idaapi.action_desc_t(
+            self.disable_disasm_action_name,
+            "Disable Highlighting (Graph/Linear)",
+            toggle_disasm_highlight_off_handler(),
+            "Ctrl+Alt+L",
+            "Disable function call highlighting in Graph/Linear view",
+            201
+        )
+
         idaapi.register_action(enable_action)
         idaapi.register_action(disable_action)
+        idaapi.register_action(enable_disasm_action)
+        idaapi.register_action(disable_disasm_action)
 
         # Hook the right-click context menu
         self.menu_hooks = ContextMenuHooks()
@@ -76,8 +130,11 @@ class highlight_func_calls_t(idaapi.plugin_t):
         self.hooks = highlight_hooks_t()
         self.hooks.hook()
 
-        ida_kernwin.msg("Highlight Function Calls (funccall_highlighter.py) plugin: Loaded.\n")
-        return idaapi.PLUGIN_KEEP
+        # Hook for Graph/Linear view highlighting
+        self.graph_linear_hooks = GraphLinearHighlightHooks()
+
+        ida_kernwin.msg("Highlight Function Calls plugin: Loaded.\n")
+        return ida_idaapi.PLUGIN_KEEP
 
     def term(self):
         if self.hooks:
@@ -85,11 +142,13 @@ class highlight_func_calls_t(idaapi.plugin_t):
 
         idaapi.unregister_action(self.enable_action_name)
         idaapi.unregister_action(self.disable_action_name)
+        idaapi.unregister_action(self.enable_disasm_action_name)
+        idaapi.unregister_action(self.disable_disasm_action_name)
 
         if self.menu_hooks:
             self.menu_hooks.unhook()
 
-        ida_kernwin.msg("Highlight Function Calls (funccall_highlighter.py) plugin: Unloaded.\n")
+        ida_kernwin.msg("Highlight Function Calls plugin: Unloaded.\n")
 
     def run(self, arg):
         pass
@@ -98,8 +157,12 @@ class ContextMenuHooks(idaapi.UI_Hooks):
     def finish_populating_widget_popup(self, form, popup):
         # Add actions to the context menu of the Pseudocode view
         if idaapi.get_widget_type(form) == idaapi.BWN_PSEUDOCODE:
-            idaapi.attach_action_to_popup(form, popup, highlight_func_calls_t.enable_action_name, "Function CALL highlight/")
-            idaapi.attach_action_to_popup(form, popup, highlight_func_calls_t.disable_action_name, "Function CALL highlight/")
+            idaapi.attach_action_to_popup(form, popup, highlight_func_calls_t.enable_action_name, "Function CALL highlighter/")
+            idaapi.attach_action_to_popup(form, popup, highlight_func_calls_t.disable_action_name, "Function CALL highlighter/")
+        # Add actions to the context menu of Graph and Linear views
+        elif idaapi.get_widget_type(form) in [idaapi.BWN_DISASMS, idaapi.BWN_DISASM]:
+            idaapi.attach_action_to_popup(form, popup, highlight_func_calls_t.enable_disasm_action_name, "Function CALL highlighter/")
+            idaapi.attach_action_to_popup(form, popup, highlight_func_calls_t.disable_disasm_action_name, "Function CALL highlighter/")
 
 class toggle_highlight_on_handler(ida_kernwin.action_handler_t):
     def activate(self, ctx):
@@ -121,12 +184,32 @@ class toggle_highlight_off_handler(ida_kernwin.action_handler_t):
             return ida_kernwin.AST_ENABLE_FOR_WIDGET
         return ida_kernwin.AST_DISABLE_FOR_WIDGET
 
+class toggle_disasm_highlight_on_handler(ida_kernwin.action_handler_t):
+    def activate(self, ctx):
+        enable_disasm_highlighting()
+        return 1
+
+    def update(self, ctx):
+        if idaapi.get_widget_type(ctx.widget) in [idaapi.BWN_DISASMS, idaapi.BWN_DISASM]:
+            return ida_kernwin.AST_ENABLE_FOR_WIDGET
+        return ida_kernwin.AST_DISABLE_FOR_WIDGET
+
+class toggle_disasm_highlight_off_handler(ida_kernwin.action_handler_t):
+    def activate(self, ctx):
+        disable_disasm_highlighting()
+        return 1
+
+    def update(self, ctx):
+        if idaapi.get_widget_type(ctx.widget) in [idaapi.BWN_DISASMS, idaapi.BWN_DISASM]:
+            return ida_kernwin.AST_ENABLE_FOR_WIDGET
+        return ida_kernwin.AST_DISABLE_FOR_WIDGET
+
 def enable_highlighting():
     global plugin_enabled
     plugin_enabled = True
     vu = ida_hexrays.get_widget_vdui(ida_kernwin.get_current_viewer())
     if vu:
-        ida_kernwin.msg("Highlighting Enabled\n")
+        ida_kernwin.msg("Highlighting Enabled (Pseudocode)\n")
         vu.refresh_ctext()
 
 def disable_highlighting():
@@ -134,8 +217,20 @@ def disable_highlighting():
     plugin_enabled = False
     vu = ida_hexrays.get_widget_vdui(ida_kernwin.get_current_viewer())
     if vu:
-        ida_kernwin.msg("Highlighting Disabled\n")
+        ida_kernwin.msg("Highlighting Disabled (Pseudocode)\n")
         vu.refresh_ctext()
+
+def enable_disasm_highlighting():
+    global plugin_enabled
+    plugin_enabled = True
+    ida_kernwin.msg("Highlighting Enabled (Graph/Linear View)\n")
+    GraphLinearHighlightHooks().refresh_view()
+
+def disable_disasm_highlighting():
+    global plugin_enabled
+    plugin_enabled = False
+    ida_kernwin.msg("Highlighting Disabled (Graph/Linear View)\n")
+    GraphLinearHighlightHooks().refresh_view()
 
 def PLUGIN_ENTRY():
     return highlight_func_calls_t()
